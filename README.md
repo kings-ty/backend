@@ -26,14 +26,8 @@ This project is a FastAPI-based backend service that provides English sentence c
 ---
 ## 📈 Architecture Overview
 
-Client
-  │
-  ├──> /api/define ──> Dictionary API
-  │
-  └──> /api/correctSentence
-         ├──> LanguageTool
-         ├──> Gemini API (optional)
-         └──> PostgreSQL (store correction pattern)
+<img width="395" height="176" alt="image" src="https://github.com/user-attachments/assets/c3798628-c86d-4945-b464-361e019145af" />
+
 
 ---
 
