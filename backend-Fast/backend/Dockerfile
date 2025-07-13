@@ -4,7 +4,7 @@
 FROM eclipse-temurin:17-jre-jammy AS java-builder
 
 # --- Stage 2: Python application build ---
-FROM python:3.10-slim-buster
+FROM python:3.10-slim-bullseye
 
 # Stage 1 builded Java 17 JRE copy.
 COPY --from=java-builder /opt/java/openjdk /usr/local/openjdk-17
