@@ -2,7 +2,9 @@
 from typing import Optional 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import src.models as models
 from fastapi.middleware.cors import CORSMiddleware
+from .database import Base, engine, get_db
 import language_tool_python
 import requests
 import os
@@ -11,12 +13,19 @@ import json
 import difflib  
 import datetime 
 from notion_oauth import router as notion_router   
-
+from .user_routes import router as user_router 
 # from dotenv import load_dotenv
 # load_dotenv()
+models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(
+    title="Notion Vocabulary App Backend",
+    description="FastAPI backend for Notion vocabulary integration with PostgreSQL.",
+    version="0.1.0",
+)
+
 app.include_router(notion_router)
+app.include_router(user_router) 
 # CORS settings
 app.add_middleware(
     CORSMiddleware,

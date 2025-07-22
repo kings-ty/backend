@@ -49,10 +49,12 @@ async def exchange_notion_token(payload: CodePayload):
     code = payload.code
 
     token_url = "https://api.notion.com/v1/oauth/token"
+    
+    auth_header = base64.b64encode(f'{NOTION_CLIENT_ID}:{NOTION_CLIENT_SECRET}'.encode()).decode()
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Basic {base64.b64encode(f'{NOTION_CLIENT_ID}:{NOTION_CLIENT_SECRET}'.encode()).decode()}"
+        "Authorization": f"Basic {auth_header}"
     }
 
     data = {
@@ -70,14 +72,56 @@ async def exchange_notion_token(payload: CodePayload):
             access_token = notion_data.get("access_token")
             workspace_id = notion_data.get("workspace_id")
             owner_info = notion_data.get("owner", {})
+            user_id = owner_info.get("user", {}).get("id") 
             user_name = owner_info.get("user", {}).get("name", "Unknown User")
             user_avatar = owner_info.get("user", {}).get("avatar_url", "") 
+            
+            if user_id:
+                user_notion_db_map[user_id] = {"access_token": access_token, "workspace_id": workspace_id}
+                print("Check", user_notion_db_map[user_id])
+            else:
+                print("Warning: Notion user ID not found in owner info.")
+
+            search_url = "https://api.notion.com/v1/search"
+            print("Skip2")
+            search_headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "Notion-Version": "2022-06-28"
+            }
+            search_payload = {
+                "filter": {
+                    "property": "object",
+                    "value": "database" # 데이터베이스만 필터링
+                },
+                "page_size": 20 # 한 번에 가져올 최대 결과 수
+            }
+
+            search_response = await client.post(search_url, headers=search_headers, json=search_payload)
+            search_response.raise_for_status()
+            search_results = search_response.json()
+            accessible_databases = []
+            print("Check3")
+            for result in search_results.get("results", []):
+                if result.get("object") == "database":
+                    # 데이터베이스 제목을 추출합니다. Notion API 응답 구조에 따라 달라질 수 있습니다.
+                    # 보통 title 속성은 리치 텍스트 배열입니다.
+                    title_property = result.get("title", [])
+                    database_title = ""
+                    if title_property and isinstance(title_property, list):
+                        database_title = "".join([text_obj.get("plain_text", "") for text_obj in title_property])
+                    
+                    accessible_databases.append({
+                        "id": result.get("id"),
+                        "title": database_title if database_title else "Untitled Database"
+                    })
 
             print("Notion Token Exchange Response:", notion_data)
             return JSONResponse(content={
                 "message": "Notion token exchanged successfully",
                 "access_token": access_token, # 클라이언트에게 토큰을 전달 (보안 주의!)
                 "workspace_id": workspace_id,
+                "user_id": user_id, # Notion user ID
                 "user_name": user_name,
                 "user_avatar": user_avatar
             })
@@ -174,3 +218,116 @@ async def save_to_notion(payload: SavePayload):
         except Exception as e:
             print(f"An unexpected error occurred during Notion save: {e}")
             raise HTTPException(status_code=500, detail="Internal server error during Notion save")
+        
+
+class SavePayload(BaseModel):
+    word: str
+    definition: str
+    synonyms: str
+    access_token: str 
+
+@router.post("/save-to-notion")
+async def save_to_notion(payload: SavePayload):
+    """
+    클라이언트로부터 받은 단어 정보를 Notion 데이터베이스에 저장합니다.
+    """
+    # 클라이언트가 전달한 Notion access_token을 사용합니다.
+    # 다시 한번 강조하지만, 실제 서비스에서는 백엔드에서 사용자별로 저장된 토큰을 사용해야 합니다.
+    notion_access_token = payload.access_token
+
+    # Notion API의 페이지 생성 엔드포인트 URL
+    # Notion API 문서: https://developers.notion.com/reference/post-page
+    notion_api_url = "https://api.notion.com/v1/pages"
+
+    # Notion API 요청에 필요한 헤더
+    # Bearer 토큰 인증 방식 사용
+    headers = {
+        "Authorization": f"Bearer {notion_access_token}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28" # Notion API 버전 (Notion 개발자 문서에서 최신 버전 확인)
+    }
+    NOTION_DATABASE_ID = "YOUR_NOTION_VOCABULARY_DATABASE_ID" 
+    # Notion 페이지 생성 요청 본문 (데이터베이스의 속성(properties)에 맞게 구성)
+    # ⭐ 중요: 이 'properties' 구조는 Notion 데이터베이스의 실제 컬럼 이름 및 타입과 일치해야 합니다. ⭐
+    # 예를 들어, Notion 데이터베이스에 'Word' (제목), 'Definition' (리치 텍스트), 'Synonyms' (리치 텍스트)
+    # 컬럼이 있다고 가정합니다.
+    page_data = {
+        "parent": {"database_id": NOTION_DATABASE_ID}, # ⭐ 위에서 설정한 DB ID 사용 ⭐
+        "properties": {
+            "Word": { # Notion 데이터베이스의 'Word'라는 제목(Title) 속성
+                "title": [
+                    {
+                        "text": {
+                            "content": payload.word
+                        }
+                    }
+                ]
+            },
+            "Definition": { # Notion 데이터베이스의 'Definition'이라는 리치 텍스트(Rich Text) 속성
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": payload.definition
+                        }
+                    }
+                ]
+            },
+            "Synonyms": { # Notion 데이터베이스의 'Synonyms'이라는 리치 텍스트(Rich Text) 속성
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": payload.synonyms
+                        }
+                    }
+                ]
+            }
+            # 만약 Notion 데이터베이스에 다른 속성(예: 'Created Date', 'Tags' 등)이 있다면
+            # 여기에 추가하여 값을 설정할 수 있습니다.
+            # 예: "Tags": {"multi_select": [{"name": "Vocabulary"}]}
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            # Notion API에 POST 요청 보내기
+            response = await client.post(notion_api_url, headers=headers, json=page_data)
+            response.raise_for_status() # 2xx 외의 응답은 HTTPStatusError 예외 발생
+
+            # Notion API 응답 로깅
+            print("Notion page created successfully:", response.json())
+
+            # 성공 응답 반환
+            return JSONResponse(content={"message": "Word saved to Notion successfully!"})
+
+        except httpx.HTTPStatusError as e:
+            # HTTP 오류 (예: 400 Bad Request, 401 Unauthorized, 404 Not Found 등) 처리
+            print(f"Error saving to Notion: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Failed to save to Notion: {e.response.text}"
+            )
+        except Exception as e:
+            # 기타 예상치 못한 오류 처리
+            print(f"An unexpected error occurred during Notion save: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error during Notion save"
+            )
+user_notion_db_map = {}
+class SetDatabasePayload(BaseModel):
+    database_id: str
+    user_id: str
+@router.post("/set-vocabulary-db")
+async def set_vocabulary_db(payload: SetDatabasePayload):
+    """
+    사용자가 선택한 Notion 데이터베이스 ID를 백엔드에 저장합니다.
+    """
+    if payload.user_id:
+        if payload.user_id in user_notion_db_map:
+            user_notion_db_map[payload.user_id]["vocabulary_db_id"] = payload.database_id
+            print(f"User {payload.user_id} selected vocabulary DB: {payload.database_id}")
+            return JSONResponse(content={"message": "Vocabulary database set successfully!"})
+        else:
+            raise HTTPException(status_code=400, detail="User not authenticated or token not found.")
+    else:
+        raise HTTPException(status_code=400, detail="User ID is required.")
