@@ -10,12 +10,13 @@ import psycopg2
 import json     
 import difflib  
 import datetime 
+from notion_oauth import router as notion_router   
 
 # from dotenv import load_dotenv
 # load_dotenv()
 
 app = FastAPI()
-
+app.include_router(notion_router)
 # CORS settings
 app.add_middleware(
     CORSMiddleware,
