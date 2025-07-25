@@ -108,7 +108,6 @@ async def exchange_notion_token(payload: CodePayload, db_session: Session = Depe
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Basic {auth_header}"
-        "Authorization": f"Basic {auth_header}"
     }
 
     data = {
