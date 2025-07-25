@@ -2,7 +2,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import declarative_base 
-
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD  
 # SQLAlchemy 데이터베이스 URL 생성
 # f-string을 사용하여 변수를 URL에 삽입합니다.
@@ -25,13 +24,16 @@ Base = declarative_base()
 
 # 데이터베이스 세션을 제공하는 의존성 함수
 # FastAPI의 Depends와 함께 사용하여 요청마다 새로운 DB 세션을 제공합니다.
+from fastapi import HTTPException
 def get_db():
-    db = SessionLocal() # 새 세션 생성
+    db = SessionLocal()
     try:
-        yield db # 세션을 호출자에게 제공
+        yield db
     except Exception as e:
-        print(f"An error occurred: {e}")
+        db.rollback()
+        # 오류가 발생했음을 명확히 알리고, FastAPI가 응답을 생성할 수 있도록
+        # HTTPException을 다시 발생시킵니다.
+        print(f"Database session error: {e}") # 디버깅을 위한 로그
+        raise HTTPException(status_code=500, detail="Database operation failed")
     finally:
-        db.close() # 요청 처리 후 세션 닫기 (연결 풀에 반환)
-
-print("database.py has been executed and Base/engine are initialized.")
+        db.close()

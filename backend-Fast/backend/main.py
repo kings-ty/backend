@@ -10,14 +10,23 @@ import psycopg2
 import json     
 import difflib  
 import datetime 
+import models
+from database import Base, engine, get_db
 from notion_oauth import router as notion_router   
+from user_routes import router as user_router # user_routes.py 임포트 (새로 생성 예정)
+
+models.Base.metadata.create_all(bind=engine)
 
 # from dotenv import load_dotenv
 # load_dotenv()
 
-app = FastAPI()
+app = FastAPI(
+    title="Notion Vocabulary App Backend",
+    description="FastAPI backend for Notion vocabulary integration with PostgreSQL.",
+    version="0.1.0",
+)
 app.include_router(notion_router)
-# CORS settings
+app.include_router(user_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -54,6 +63,8 @@ class CorrectionResponse(BaseModel):
 # LanguageTool intialize
 tool = language_tool_python.LanguageTool('en-GB') 
 
+NOTION_API_TOKEN = models.NotionIntegration.notion_access_token
+NOTION_PARENT_PAGE_ID = models.NotionIntegration.selected_vocabulary_db_id
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
@@ -78,6 +89,71 @@ def get_db_connection():
 
 class CorrectionResponse(BaseModel):
     correctedText: str
+
+
+
+# @app.post("/api/createNotionDB")
+# async def api_create_notion_db():
+#     """
+#     Notion DB 생성 및 속성 자동 정의 엔드포인트
+#     """
+#     # 예시 속성 자동 정의
+#     properties = {
+#         "Word": {"title": {}},
+#         "Definition": {"rich_text": {}},
+#         "Synonyms": {"multi_select": {"options": []}},
+#         "Examples": {"rich_text": {}},
+#         "Phonetic": {"rich_text": {}}
+#     }
+#     db_title = "Vocabulary DB"
+#     notion_db = create_notion_database(db_title)
+#     return {"notion_db": notion_db}
+# def create_notion_database(title: str):
+#     url = "https://api.notion.com/v1/databases"
+#     print(NOTION_API_TOKEN, NOTION_PARENT_PAGE_ID," Notion API Token and Parent Page ID")
+#     exit()
+#     payload = {
+#         "parent": { "type": "page_id", "page_id": NOTION_PARENT_PAGE_ID},
+#         "title": [{
+#             "type": "text",
+#             "text": { "content": title }
+#         }],
+#         "properties": {
+#             "Word": { "title": {} },
+#             "Definition": { "rich_text": {} },
+#             "Synonyms": { "multi_select": {} }
+#         }
+#     }
+
+#     headers = {
+#         "Authorization": f"Bearer {NOTION_API_TOKEN}",
+#         "Content-Type": "application/json",
+#         "Notion-Version": "2022-06-28"
+#     }
+
+#     response = requests.post(url, headers=headers, json=payload)
+#     return response.json()
+
+def create_notion_database2222ss(title: str, properties: dict) -> dict:
+    try:
+        url = "https://api.notion.com/v1/databases"
+        headers = {
+            "Authorization": f"Bearer {NOTION_API_TOKEN}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "parent": {"type": "page_id", "page_id": NOTION_PARENT_PAGE_ID},
+            "title": [{"type": "text", "text": {"content": title}}],
+            "properties": properties
+        }
+        print("notion_parent_page_id:", NOTION_PARENT_PAGE_ID, "notion_api_token:", NOTION_API_TOKEN)
+        response = requests.post(url, headers=headers, json=payload)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"Notion API 오류: {response.text}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Notion API 호출 실패: {e}")
 
 # --- Using LLm refine ---
 async def refine_with_llm(text: str) -> str:
